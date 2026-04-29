@@ -1,0 +1,7 @@
+Arena_Size:15 15
+Max_Rounds:1000
+Sleep_interval:0
+Game_State_Live:false
+Flamethrowers:3
+Pits:2
+Mounds:3

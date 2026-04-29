@@ -14,7 +14,7 @@
 
 namespace fs = std::filesystem;
 
-Arena::Arena(const std::string& config_file) : m_current_round(0) {
+Arena::Arena(const std::string& config_file) : m_current_round(0), m_rng(std::random_device{}()) {
     load_config(config_file);
     m_grid.resize(m_height, std::vector<Cell>(m_width));
     place_obstacles();
@@ -70,8 +70,6 @@ void Arena::load_config(const std::string& config_file) {
 }
 
 void Arena::place_obstacles() {
-    std::random_device rd;
-    std::mt19937 gen(rd());
     std::uniform_int_distribution<> row_dist(0, m_height - 1);
     std::uniform_int_distribution<> col_dist(0, m_width - 1);
 
@@ -79,8 +77,8 @@ void Arena::place_obstacles() {
         for (int i = 0; i < count; ++i) {
             int row, col;
             do {
-                row = row_dist(gen);
-                col = col_dist(gen);
+                row = row_dist(m_rng);
+                col = col_dist(m_rng);
             } while (m_grid[row][col].obstacle != '.');
 
             m_grid[row][col].obstacle = type;
@@ -191,8 +189,6 @@ bool Arena::is_cell_empty(int row, int col) const {
 }
 
 void Arena::place_robots() {
-    std::random_device rd;
-    std::mt19937 gen(rd());
     std::uniform_int_distribution<> row_dist(0, m_height - 1);
     std::uniform_int_distribution<> col_dist(0, m_width - 1);
 
@@ -202,8 +198,8 @@ void Arena::place_robots() {
     for (auto* robot : m_robots) {
         int row, col;
         do {
-            row = row_dist(gen);
-            col = col_dist(gen);
+            row = row_dist(m_rng);
+            col = col_dist(m_rng);
         } while (!is_cell_empty(row, col));
 
         robot->move_to(row, col);
@@ -294,20 +290,13 @@ std::vector<RadarObj> Arena::perform_radar_scan(RobotBase* robot, int direction)
         int dr = directions[direction].first;
         int dc = directions[direction].second;
 
+        int perp_dr = -dc;
+        int perp_dc = dr;
+
         for (int distance = 1; distance < std::max(m_height, m_width); ++distance) {
             for (int offset = -1; offset <= 1; ++offset) {
-                int scan_row, scan_col;
-
-                if (dr == 0) {
-                    scan_row = robot_row + offset;
-                    scan_col = robot_col + dc * distance;
-                } else if (dc == 0) {
-                    scan_row = robot_row + dr * distance;
-                    scan_col = robot_col + offset;
-                } else {
-                    scan_row = robot_row + dr * distance + (offset * (dc == 0 ? 1 : 0));
-                    scan_col = robot_col + dc * distance + (offset * (dr == 0 ? 1 : 0));
-                }
+                int scan_row = robot_row + dr * distance + perp_dr * offset;
+                int scan_col = robot_col + dc * distance + perp_dc * offset;
 
                 if (scan_row >= 0 && scan_row < m_height &&
                     scan_col >= 0 && scan_col < m_width) {
@@ -330,25 +319,22 @@ std::vector<RadarObj> Arena::perform_radar_scan(RobotBase* robot, int direction)
 }
 
 int Arena::calculate_damage(WeaponType weapon) {
-    std::random_device rd;
-    std::mt19937 gen(rd());
-
     switch (weapon) {
         case railgun: {
             std::uniform_int_distribution<> dist(10, 20);
-            return dist(gen);
+            return dist(m_rng);
         }
         case hammer: {
             std::uniform_int_distribution<> dist(50, 60);
-            return dist(gen);
+            return dist(m_rng);
         }
         case grenade: {
             std::uniform_int_distribution<> dist(10, 40);
-            return dist(gen);
+            return dist(m_rng);
         }
         case flamethrower: {
             std::uniform_int_distribution<> dist(30, 50);
-            return dist(gen);
+            return dist(m_rng);
         }
         default:
             return 0;
@@ -386,6 +372,10 @@ void Arena::handle_shot(RobotBase* shooter, int shot_row, int shot_col) {
               << ") fires " << weapon << " at (" << shot_row << "," << shot_col << ")\n";
 
     if (weapon == grenade) {
+        if (shooter->get_grenades() <= 0) {
+            std::cout << "    out of grenades\n";
+            return;
+        }
         shooter->decrement_grenades();
 
         for (int dr = -1; dr <= 1; ++dr) {
@@ -407,20 +397,13 @@ void Arena::handle_shot(RobotBase* shooter, int shot_row, int shot_col) {
         int dr = (shot_row > shooter_row) ? 1 : (shot_row < shooter_row) ? -1 : 0;
         int dc = (shot_col > shooter_col) ? 1 : (shot_col < shooter_col) ? -1 : 0;
 
+        int perp_dr = -dc;
+        int perp_dc = dr;
+
         for (int distance = 1; distance <= 4; ++distance) {
             for (int offset = -1; offset <= 1; ++offset) {
-                int target_row, target_col;
-
-                if (dr == 0) {
-                    target_row = shooter_row + offset;
-                    target_col = shooter_col + dc * distance;
-                } else if (dc == 0) {
-                    target_row = shooter_row + dr * distance;
-                    target_col = shooter_col + offset;
-                } else {
-                    target_row = shooter_row + dr * distance;
-                    target_col = shooter_col + dc * distance;
-                }
+                int target_row = shooter_row + dr * distance + perp_dr * offset;
+                int target_col = shooter_col + dc * distance + perp_dc * offset;
 
                 if (target_row >= 0 && target_row < m_height &&
                     target_col >= 0 && target_col < m_width) {
@@ -451,13 +434,26 @@ void Arena::handle_shot(RobotBase* shooter, int shot_row, int shot_col) {
             current_col += dc;
         }
     } else if (weapon == hammer) {
-        if (shot_row >= 0 && shot_row < m_height &&
-            shot_col >= 0 && shot_col < m_width) {
-            RobotBase* target = m_grid[shot_row][shot_col].robot;
-            if (target != nullptr && target != shooter && target->get_health() > 0) {
-                int damage = calculate_damage(weapon);
-                apply_damage(target, damage);
+        if (std::abs(shot_row - shooter_row) <= 1 && std::abs(shot_col - shooter_col) <= 1) {
+            for (int dr = -1; dr <= 1; ++dr) {
+                for (int dc = -1; dc <= 1; ++dc) {
+                    if (dr == 0 && dc == 0) continue;
+                    
+                    int target_row = shooter_row + dr;
+                    int target_col = shooter_col + dc;
+                    
+                    if (target_row >= 0 && target_row < m_height &&
+                        target_col >= 0 && target_col < m_width) {
+                        RobotBase* target = m_grid[target_row][target_col].robot;
+                        if (target != nullptr && target != shooter && target->get_health() > 0) {
+                            int damage = calculate_damage(weapon);
+                            apply_damage(target, damage);
+                        }
+                    }
+                }
             }
+        } else {
+            std::cout << "    target out of hammer range\n";
         }
     }
 }
@@ -507,10 +503,8 @@ void Arena::handle_movement(RobotBase* robot) {
         }
 
         if (target_cell.obstacle == 'F') {
-            std::random_device rd;
-            std::mt19937 gen(rd());
             std::uniform_int_distribution<> dist(30, 50);
-            int damage = dist(gen);
+            int damage = dist(m_rng);
 
             int armor = robot->get_armor();
             double reduction = armor * 0.1;
@@ -556,10 +550,16 @@ void Arena::run() {
     std::cout << "========================================\n\n";
 
     for (m_current_round = 1; m_current_round <= m_max_rounds; ++m_current_round) {
-        std::cout << "\n=========== ROUND " << m_current_round << " ===========\n";
-
         if (m_game_state_live) {
+            std::cout << "\n=========== ROUND " << m_current_round << " ===========\n";
             print_arena();
+        } else if (m_current_round == 1 || m_current_round % 100 == 0) {
+            std::cout << "Round " << m_current_round << " - ";
+            int alive_count = 0;
+            for (auto* robot : m_robots) {
+                if (robot->get_health() > 0) alive_count++;
+            }
+            std::cout << alive_count << " robots alive\n";
         }
 
         RobotBase* winner = nullptr;
@@ -575,24 +575,30 @@ void Arena::run() {
 
         for (auto* robot : m_robots) {
             if (robot->get_health() <= 0) {
-                std::cout << "\n" << robot->m_name << " (" << m_robot_chars[robot] << ") is out\n";
+                if (m_game_state_live) {
+                    std::cout << "\n" << robot->m_name << " (" << m_robot_chars[robot] << ") is out\n";
+                }
                 continue;
             }
 
-            std::cout << "\n" << robot->m_name << " (" << m_robot_chars[robot] << ") ";
-            int row, col;
-            robot->get_current_location(row, col);
-            std::cout << "at (" << row << "," << col << ") " << robot->print_stats() << "\n";
+            if (m_game_state_live) {
+                std::cout << "\n" << robot->m_name << " (" << m_robot_chars[robot] << ") ";
+                int row, col;
+                robot->get_current_location(row, col);
+                std::cout << "at (" << row << "," << col << ") " << robot->print_stats() << "\n";
+            }
 
             int radar_direction;
             robot->get_radar_direction(radar_direction);
             std::vector<RadarObj> radar_results = perform_radar_scan(robot, radar_direction);
 
-            std::cout << "  Radar scan (direction " << radar_direction << "): ";
-            if (radar_results.empty()) {
-                std::cout << "nothing detected\n";
-            } else {
-                std::cout << radar_results.size() << " objects detected\n";
+            if (m_game_state_live) {
+                std::cout << "  Radar scan (direction " << radar_direction << "): ";
+                if (radar_results.empty()) {
+                    std::cout << "nothing detected\n";
+                } else {
+                    std::cout << radar_results.size() << " objects detected\n";
+                }
             }
 
             robot->process_radar_results(radar_results);
@@ -601,8 +607,20 @@ void Arena::run() {
             if (robot->get_shot_location(shot_row, shot_col)) {
                 handle_shot(robot, shot_row, shot_col);
             } else {
-                std::cout << "  Not firing\n";
+                if (m_game_state_live) {
+                    std::cout << "  Not firing\n";
+                }
                 handle_movement(robot);
+            }
+
+            if (check_winner(winner)) {
+                std::cout << "\n\n╔════════════════════════════════════════╗\n";
+                std::cout << "║         WINNER: " << std::left << std::setw(20) << winner->m_name << "  ║\n";
+                std::cout << "╚════════════════════════════════════════╝\n\n";
+                print_arena();
+                std::cout << "Final Stats:\n" << winner->print_stats() << "\n";
+                std::cout << "Victory achieved in round " << m_current_round << "!\n";
+                return;
             }
         }
 

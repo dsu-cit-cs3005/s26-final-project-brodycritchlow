@@ -6,6 +6,7 @@
 #include <vector>
 #include <string>
 #include <map>
+#include <random>
 
 struct Cell {
     char obstacle;
@@ -32,6 +33,7 @@ private:
     std::vector<void*> m_robot_handles;
 
     int m_current_round;
+    std::mt19937 m_rng;
 
     void load_config(const std::string& config_file);
     void place_obstacles();

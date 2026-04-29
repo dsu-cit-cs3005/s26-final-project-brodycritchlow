@@ -105,7 +105,7 @@ private:
     }
 
 public:
-    Robot_Vortex() : RobotBase(2, 5, hammer) {
+    Robot_Vortex() : RobotBase(2, 5, grenade) {
         m_name = "Vortex";
         m_character = 'V';
         m_scan_index = 0;
