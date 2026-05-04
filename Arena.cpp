@@ -8,8 +8,6 @@
 #include <chrono>
 #include <thread>
 #include <dlfcn.h>
-#include <cstring>
-#include <cctype>
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -60,6 +58,11 @@ void Arena::load_config(const std::string& config_file) {
         }
     }
 
+    if (m_height < 1 || m_width < 1) {
+        std::cerr << "Error: Arena size must be at least 1x1\n";
+        exit(1);
+    }
+
     std::cout << "Arena Configuration Loaded:\n";
     std::cout << "  Size: " << m_height << "x" << m_width << "\n";
     std::cout << "  Max Rounds: " << m_max_rounds << "\n";
@@ -105,12 +108,21 @@ bool is_valid_robot_filename(const std::string& filename) {
 RobotBase* Arena::load_single_robot(const std::string& robot_file, void*& handle) {
     handle = nullptr;
 
-    if (!is_valid_robot_filename(robot_file)) {
-        std::cerr << "Invalid robot filename: " << robot_file << std::endl;
+    size_t last_slash = robot_file.find_last_of('/');
+    std::string filename = (last_slash != std::string::npos) ?
+                          robot_file.substr(last_slash + 1) : robot_file;
+
+    if (!is_valid_robot_filename(filename)) {
+        std::cerr << "Invalid robot filename: " << filename << std::endl;
         return nullptr;
     }
 
-    std::string shared_lib = "lib" + robot_file.substr(0, robot_file.find(".cpp")) + ".so";
+    std::string base_name = robot_file.substr(0, robot_file.find(".cpp"));
+    size_t slash_pos = base_name.find_last_of('/');
+    if (slash_pos != std::string::npos) {
+        base_name = base_name.substr(slash_pos + 1);
+    }
+    std::string shared_lib = "robots/lib" + base_name + ".so";
     std::string compile_cmd = "g++ -shared -fPIC -o " + shared_lib + " " +
                              robot_file + " RobotBase.o -I. -std=c++20 2>&1";
 
@@ -149,20 +161,21 @@ RobotBase* Arena::load_single_robot(const std::string& robot_file, void*& handle
 void Arena::load_robots() {
     std::vector<std::string> robot_files;
 
-    if (fs::exists("robots") && fs::is_directory("robots")) {
-        for (const auto& entry : fs::directory_iterator("robots")) {
-            std::string filename = entry.path().filename().string();
-            if (filename.find("Robot_") == 0 && filename.substr(filename.size() - 4) == ".cpp") {
-                robot_files.push_back("robots/" + filename);
-            }
+    if (!fs::exists("robots") || !fs::is_directory("robots")) {
+        std::cerr << "Error: 'robots' subdirectory not found\n";
+        return;
+    }
+
+    for (const auto& entry : fs::directory_iterator("robots")) {
+        std::string filename = entry.path().filename().string();
+        if (filename.find("Robot_") == 0 && filename.substr(filename.size() - 4) == ".cpp") {
+            robot_files.push_back("robots/" + filename);
         }
     }
 
-    for (const auto& entry : fs::directory_iterator(".")) {
-        std::string filename = entry.path().filename().string();
-        if (filename.find("Robot_") == 0 && filename.substr(filename.size() - 4) == ".cpp") {
-            robot_files.push_back(filename);
-        }
+    if (robot_files.empty()) {
+        std::cerr << "Error: No Robot_*.cpp files found in robots/ directory\n";
+        return;
     }
 
     std::cout << "\nLoading robots...\n";
