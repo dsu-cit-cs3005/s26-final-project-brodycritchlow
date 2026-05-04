@@ -241,7 +241,6 @@ public:
         int dist_from_center = std::abs(current_row - center_row) + std::abs(current_col - center_col);
         bool near_center = dist_from_center <= 3;
 
-        // Priority 1: Hunt enemies
         if (m_hunting && m_hunt_row >= 0) {
             if (std::abs(current_row - m_hunt_row) <= 1 &&
                 std::abs(current_col - m_hunt_col) <= 1) {
@@ -256,7 +255,6 @@ public:
             }
         }
 
-        // Priority 2: Get to center
         if (!near_center) {
             int dir = safe_direction_toward(current_row, current_col, center_row, center_col);
             if (dir > 0) {
@@ -266,16 +264,12 @@ public:
             }
         }
 
-        // Priority 3: Vortex pattern - move tangentially around center
-        // Get vector from center to current position
         int dr = current_row - center_row;
         int dc = current_col - center_col;
-        
-        // Rotate 90 degrees counterclockwise for tangent: (dr, dc) -> (-dc, dr)
+
         int tangent_r = -dc;
         int tangent_c = dr;
-        
-        // Normalize and find closest direction
+
         int sign_r = (tangent_r > 0) ? 1 : (tangent_r < 0) ? -1 : 0;
         int sign_c = (tangent_c > 0) ? 1 : (tangent_c < 0) ? -1 : 0;
         
@@ -291,7 +285,6 @@ public:
             move_direction = best_dir;
             move_distance = 1;
         } else {
-            // Try adjacent directions
             for (int offset = 1; offset <= 3; ++offset) {
                 int alt = best_dir + offset;
                 if (alt > 8) alt -= 8;
