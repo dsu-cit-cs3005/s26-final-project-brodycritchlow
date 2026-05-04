@@ -39,7 +39,9 @@ private:
     }
 
 public:
-    Robot_Ratboy() : RobotBase(3, 4, railgun) {} // Initialize with 3 movement, 4 armor, railgun
+    Robot_Ratboy() : RobotBase(3, 4, railgun) {
+        m_name = "Ratboy";
+    }
 
     // Radar location for scanning in one of the 8 directions
     virtual void get_radar_direction(int& radar_direction) override 
